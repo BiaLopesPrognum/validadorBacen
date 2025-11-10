@@ -1,11 +1,13 @@
 name: Check Validador Version
-permissions:
-  contents: write
-  issues: write
+
 on:
   schedule:
     - cron: "0 * * * *"  # Executa a cada hora
   workflow_dispatch:     # Permite rodar manualmente
+
+permissions:
+  contents: write        # 🔥 permite o push automático
+  issues: write          # permite criar issue de alerta
 
 jobs:
   check_version:
