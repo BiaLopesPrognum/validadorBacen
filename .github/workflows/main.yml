@@ -3,11 +3,10 @@ name: Check Validador Version
 on:
   schedule:
     - cron: "0 * * * *"  # Executa a cada hora
-  workflow_dispatch:     # Permite rodar manualmente
+  workflow_dispatch:
 
 permissions:
-  contents: write        # 🔥 permite o push automático
-  issues: write          # permite criar issue de alerta
+  contents: write  # permite commit automático
 
 jobs:
   check_version:
@@ -59,10 +58,23 @@ jobs:
           git commit -m "Atualiza versão do validador para ${{ steps.get_version.outputs.version }}"
           git push
 
-      - name: Send alert (create issue)
+      - name: Send email alert (internal SMTP)
         if: steps.compare.outputs.changed == 'true'
-        uses: peter-evans/create-issue-from-file@v5
+        uses: dawidd6/action-send-mail@v3
         with:
-          title: "⚠️ Nova versão do Validador detectada (${{ steps.get_version.outputs.version }})"
-          content-filepath: ultima_versao.txt
-          labels: nova-versao
+          server_address: 10.3.98.105
+          server_port: 25
+          secure: false
+          subject: "🚨 Nova versão do Validador detectada: ${{ steps.get_version.outputs.version }}"
+          to: "qa-testes@prognum.com.br"
+          from: "Validador Bacen <qa-testes@teste.com.br>"
+          body: |
+            Foi detectada uma nova versão do Validador BACEN!
+
+            🔹 Versão anterior: (registrada anteriormente)
+            🔹 Nova versão: ${{ steps.get_version.outputs.version }}
+
+            O arquivo ultima_versao.txt foi atualizado automaticamente no repositório.
+
+            Repositório: ${{ github.repository }}
+            Executado por: GitHub Actions
