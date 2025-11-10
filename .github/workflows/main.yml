@@ -1,64 +1,64 @@
-# .github/workflows/monitor_version.yml
+name: Check Validador Version
 
-# 1. Nome do Workflow: Aparece na interface do Actions
-name: Monitoramento de Versão do Validador
-
-# 2. Gatilhos (Triggers): QUANDO o workflow deve ser executado
 on:
-  # Execução agendada (neste exemplo, a cada 5 minutos)
   schedule:
-    # Formato CRON: minuto hora dia_do_mês mês dia_da_semana
-    # '*/5 * * * *' = A cada 5 minutos
-    - cron: '*/5 * * * *'
-  # Permite que o usuário acione manualmente
-  workflow_dispatch:
-  # Opcional: Executar em push (se quiser testar após mudar o código)
-  # push:
-  #   branches: [ main ]
+    - cron: "0 * * * *"  # Executa a cada hora
+  workflow_dispatch:     # Permite rodar manualmente
 
-# 3. Jobs: A(s) tarefa(s) a ser(em) executada(s)
 jobs:
   check_version:
-    # runs-on: ONDE o job será executado (o runner)
     runs-on: ubuntu-latest
-    
-    # 4. Variáveis de Ambiente do Job (para passar o Secret)
-    env:
-      # O valor do Secret 'EXPECTED_RELEASE' é injetado no job como ENV
-      EXPECTED_RELEASE: ${{ secrets.EXPECTED_RELEASE }}
-      
-    # 5. Steps: A lista de ações a executar sequencialmente
+
     steps:
-      - name: Checkout do Código 
-        # Usa uma action pré-definida para baixar o código do repositório
+      - name: Checkout repo
         uses: actions/checkout@v4
-        
-      - name: Configurar Node.js
-        # Usa uma action para configurar o ambiente Node.js
-        uses: actions/setup-node@v4
+
+      - name: Install curl and grep
+        run: sudo apt-get update && sudo apt-get install -y curl grep
+
+      - name: Get current version from site
+        id: get_version
+        run: |
+          PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
+          VERSION=$(echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | head -1 | awk '{print $2}')
+          echo "Versão atual encontrada: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Compare with last stored version
+        id: compare
+        run: |
+          FILE="ultima_versao.txt"
+          if [ -f "$FILE" ]; then
+            LAST=$(cat "$FILE")
+          else
+            LAST="none"
+          fi
+
+          echo "Última versão registrada: $LAST"
+          echo "Nova versão: ${{ steps.get_version.outputs.version }}"
+
+          if [ "$LAST" != "${{ steps.get_version.outputs.version }}" ]; then
+            echo "Nova versão detectada!"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "${{ steps.get_version.outputs.version }}" > "$FILE"
+          else
+            echo "Nenhuma mudança detectada."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit new version (if changed)
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add ultima_versao.txt
+          git commit -m "Atualiza versão do validador para ${{ steps.get_version.outputs.version }}"
+          git push
+
+      - name: Send alert (create issue)
+        if: steps.compare.outputs.changed == 'true'
+        uses: peter-evans/create-issue-from-file@v5
         with:
-          node-version: '20'
-          
-      - name: Instalar Dependências (Opcional, se houver)
-        # Comando shell para instalar pacotes (não é o nosso caso, mas é comum)
-        # run: npm install 
-          
-      - name: Executar Script de Verificação
-        # Comando shell para rodar o nosso script Node.js
-        run: node version_checker.js
-        
-      - name: Enviar Notificação de Alarme
-        # Esta etapa só é executada se a etapa anterior (run) FALHAR
-        if: ${{ failure() }}
-        uses: dawidd6/action-send-mail@v3
-        with:
-          # Detalhes do e-mail... (configurados com Secrets)
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: '[ALERTA] MUDANÇA DE VERSÃO DO VALIDADOR!'
-          to: seu_email@exemplo.com
-          body: |
-            A versão do validador mudou.
-            Verifique o log do workflow para a nova versão.
+          title: "⚠️ Nova versão do Validador detectada (${{ steps.get_version.outputs.version }})"
+          content-filepath: ultima_versao.txt
+          labels: nova-versao
