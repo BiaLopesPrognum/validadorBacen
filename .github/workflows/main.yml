@@ -22,9 +22,9 @@ jobs:
       - name: Verificar horário atual (executar apenas entre 07h e 19h)
         run: |
           HORA=$(TZ="America/Sao_Paulo" date +%H)
-          echo "⏰ Hora atual: $HORA"
+          echo "Hora atual: $HORA"
           if [ "$HORA" -lt 7 ] || [ "$HORA" -ge 19 ]; then
-            echo "🛑 Fora do horário permitido (07h–19h). Encerrando workflow."
+            echo "Fora do horário permitido (07h–19h). Encerrando workflow."
             exit 0
           fi
 
@@ -35,7 +35,7 @@ jobs:
           VERSION=$(echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | head -1 | awk '{print $2}')
           
           if [ -z "$VERSION" ]; then
-            echo "⚠️ Nenhuma versão encontrada na página!"
+            echo "Nenhuma versão encontrada na página!"
             VERSION="erro"
           fi
 
@@ -73,16 +73,16 @@ jobs:
           curl -L "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip" -o "SCR3040_Validador.zip"
           echo "✅ Download concluído."
 
-      - name: Commit nova versão (apenas info)
+      - name: Commit nova versão (somente registro)
         if: steps.compare.outputs.changed == 'true'
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add ultima_versao.txt
-          git commit -m "📦 Atualiza Validador BACEN para versão ${{ steps.get_version.outputs.version }}"
+          git commit -m "Atualiza Validador BACEN para versão ${{ steps.get_version.outputs.version }}"
           git push
 
-      - name: Criar Release no GitHub
+      - name: Criar Release no GitHub (com o ZIP anexado)
         if: steps.compare.outputs.changed == 'true'
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -95,7 +95,7 @@ jobs:
             🔹 Versão anterior: ${{ steps.compare.outputs.last_version }}
             🔹 Nova versão: ${{ steps.get_version.outputs.version }}
 
-            Download direto disponível abaixo.
+            🔗 [Baixar Validador BACEN (link oficial)](https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip)
           files: SCR3040_Validador.zip
 
       - name: Notificar no Google Chat (nova versão detectada)
@@ -103,7 +103,6 @@ jobs:
         env:
           CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
         run: |
-          RELEASE_URL="${{ steps.create_release.outputs.url }}"
           cat <<EOF > payload.json
           {
             "cardsV2": [
@@ -111,14 +110,12 @@ jobs:
                 "cardId": "validador-update",
                 "card": {
                   "header": {
-                    "title": "🚀 Nova versão do Validador detectada!",
-                    "subtitle": "Workflow: Check Validador Version",
-                    "imageUrl": "https://cdn-icons-png.flaticon.com/512/5610/5610944.png",
-                    "imageType": "CIRCLE"
+                    "title": "Nova versão do Validador BACEN detectada",
+                    "subtitle": "Workflow: Check Validador Version"
                   },
                   "sections": [
                     {
-                      "header": "📦 Detalhes da atualização",
+                      "header": "Detalhes da atualização",
                       "widgets": [
                         {
                           "decoratedText": {
@@ -133,24 +130,13 @@ jobs:
                           }
                         },
                         {
-                          "decoratedText": {
-                            "topLabel": "Repositório",
-                            "text": "${{ github.repository }}"
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "header": "⬇️ Download da nova versão",
-                      "widgets": [
-                        {
                           "buttonList": {
                             "buttons": [
                               {
-                                "text": "Baixar Validador",
+                                "text": "Baixar Validador (link oficial)",
                                 "onClick": {
                                   "openLink": {
-                                    "url": "$RELEASE_URL"
+                                    "url": "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip"
                                   }
                                 }
                               }
