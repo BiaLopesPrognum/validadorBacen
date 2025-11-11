@@ -1,103 +1,88 @@
-name: Monitorar Troca de Versão do Validador
+name: Check Validador Version
 
 on:
   schedule:
-    # Executa todo dia às 8h (horário UTC → 5h no Brasil aprox)
-    - cron: "0 8 * * *"
-  workflow_dispatch:
+    - cron: "0 * * * *"  # Executa a cada hora
+  workflow_dispatch:     # Permite rodar manualmente pelo botão "Run workflow"
+
+permissions:
+  contents: write  # Permite commit automático
 
 jobs:
-  check-validator:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  check_version:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout do repositório
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Instalar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Install curl and grep
+        run: sudo apt-get update && sudo apt-get install -y curl grep
 
-      - name: Criar script de verificação
+      - name: Get current version from site
+        id: get_version
         run: |
-          echo "import requests, ipaddress, socket, os, smtplib
-from email.mime.text import MIMEText
+          PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
+          VERSION=$(echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | head -1 | awk '{print $2}')
+          
+          if [ -z "$VERSION" ]; then
+            echo "⚠️ Nenhuma versão encontrada na página!"
+            VERSION="erro"
+          fi
 
-VALIDADOR_URL = os.getenv('VALIDADOR_URL')
-VERSION_FILE = 'ultima_versao.txt'
-SMTP_SERVER = os.getenv('SMTP_SERVER')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SMTP_USER = os.getenv('SMTP_USER')
-SMTP_PASS = os.getenv('SMTP_PASS')
-EMAIL_TO = os.getenv('EMAIL_TO')
+          echo "Versão atual encontrada: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-# Função para detectar se o host é interno
-def is_private(host):
-    try:
-        ip = socket.gethostbyname(host)
-        return ipaddress.ip_address(ip).is_private
-    except Exception:
-        return False
+      - name: Compare with last stored version
+        id: compare
+        run: |
+          FILE="ultima_versao.txt"
+          if [ -f "$FILE" ]; then
+            LAST=$(cat "$FILE")
+          else
+            LAST="none"
+          fi
 
-def get_version():
-    try:
-        response = requests.get(VALIDADOR_URL, timeout=10)
-        response.raise_for_status()
-        return response.text.strip()
-    except Exception as e:
-        print(f'Erro ao obter versão: {e}')
-        return None
+          echo "Última versão registrada: $LAST"
+          echo "Nova versão: ${{ steps.get_version.outputs.version }}"
 
-def send_email(new_version):
-    msg = MIMEText(f'Houve uma alteração na versão do validador: {new_version}')
-    msg['Subject'] = 'Alteração na versão do Validador'
-    msg['From'] = SMTP_USER
-    msg['To'] = EMAIL_TO
+          if [ "$LAST" != "${{ steps.get_version.outputs.version }}" ]; then
+            echo "Nova versão detectada!"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "last_version=$LAST" >> $GITHUB_OUTPUT
+            echo "${{ steps.get_version.outputs.version }}" > "$FILE"
+          else
+            echo "Nenhuma mudança detectada."
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "last_version=$LAST" >> $GITHUB_OUTPUT
+          fi
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASS)
-        server.send_message(msg)
-        print('E-mail enviado com sucesso!')
+      - name: Commit new version (if changed)
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add ultima_versao.txt
+          git commit -m "Atualiza versão do Validador para ${{ steps.get_version.outputs.version }}"
+          git push
 
-def main():
-    host = VALIDADOR_URL.split('/')[2]
-    if is_private(host):
-        print(f'{host} é um IP interno.')
-    else:
-        print(f'{host} é um IP externo.')
+      - name: Send email alert (internal SMTP)
+        if: steps.compare.outputs.changed == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: mail.prognum.com.br
+          server_port: 587
+          secure: false
+          subject: "🚨 Nova versão do Validador detectada: ${{ steps.get_version.outputs.version }}"
+          to: "qa-testes@prognum.com.br"
+          from: "Validador Bacen <qa-testes@prognum.com.br>"
+          body: |
+            Foi detectada uma nova versão do Validador BACEN!
 
-    new_version = get_version()
-    if not new_version:
-        return
+            🔹 Versão anterior: ${{ steps.compare.outputs.last_version }}
+            🔹 Nova versão: ${{ steps.get_version.outputs.version }}
 
-    old_version = ''
-    if os.path.exists(VERSION_FILE):
-        with open(VERSION_FILE, 'r') as f:
-            old_version = f.read().strip()
+            O arquivo ultima_versao.txt foi atualizado automaticamente no repositório.
 
-    if new_version != old_version:
-        print(f'Nova versão detectada: {new_version}')
-        with open(VERSION_FILE, 'w') as f:
-            f.write(new_version)
-        send_email(new_version)
-    else:
-        print('Nenhuma alteração detectada.')
-
-if __name__ == '__main__':
-    main()
-" > monitor_validador.py
-
-      - name: Executar script
-        env:
-          VALIDADOR_URL: ${{ secrets.VALIDADOR_URL }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: python monitor_validador.py
+            Repositório: ${{ github.repository }}
+            Executado por: GitHub Actions
