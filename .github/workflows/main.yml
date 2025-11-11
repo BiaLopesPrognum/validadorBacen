@@ -66,76 +66,96 @@ jobs:
           git commit -m "Atualiza versão do Validador para ${{ steps.get_version.outputs.version }}"
           git push
 
+      # ---- DEBUG opcional ----
+      - name: Debug webhook URL (parcial)
+        run: |
+          echo "Webhook começa com: ${GOOGLE_CHAT_WEBHOOK:0:50}"
+        env:
+          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+      # -------------------------
+
       - name: Notificar no Google Chat (nova versão detectada)
         if: always()
+        env:
+          CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
         run: |
-          curl -X POST \
-            -H 'Content-Type: application/json' \
-            -d "{
-              \"cardsV2\": [
-                {
-                  \"cardId\": \"validador-update\",
-                  \"card\": {
-                    \"header\": {
-                      \"title\": \"🚀 Nova versão do Validador detectada!\",
-                      \"subtitle\": \"Workflow: Check Validador Version\",
-                      \"imageUrl\": \"https://cdn-icons-png.flaticon.com/512/5610/5610944.png\",
-                      \"imageType\": \"CIRCLE\"
-                    },
-                    \"sections\": [
-                      {
-                        \"header\": \"📦 Detalhes da atualização\",
-                        \"widgets\": [
-                          {
-                            \"decoratedText\": {
-                              \"topLabel\": \"Versão anterior\",
-                              \"text\": \"${{ steps.compare.outputs.last_version }}\"
-                            }
-                          },
-                          {
-                            \"decoratedText\": {
-                              \"topLabel\": \"Nova versão\",
-                              \"text\": \"${{ steps.get_version.outputs.version }}\"
-                            }
-                          },
-                          {
-                            \"decoratedText\": {
-                              \"topLabel\": \"Repositório\",
-                              \"text\": \"${{ github.repository }}\"
-                            }
+          echo "🧩 Gerando payload do Google Chat..."
+          cat <<EOF > payload.json
+          {
+            "cardsV2": [
+              {
+                "cardId": "validador-update",
+                "card": {
+                  "header": {
+                    "title": "🚀 Nova versão do Validador detectada!",
+                    "subtitle": "Workflow: Check Validador Version",
+                    "imageUrl": "https://cdn-icons-png.flaticon.com/512/5610/5610944.png",
+                    "imageType": "CIRCLE"
+                  },
+                  "sections": [
+                    {
+                      "header": "📦 Detalhes da atualização",
+                      "widgets": [
+                        {
+                          "decoratedText": {
+                            "topLabel": "Versão anterior",
+                            "text": "${{ steps.compare.outputs.last_version }}"
                           }
-                        ]
-                      },
-                      {
-                        \"header\": \"🔗 Ações\",
-                        \"widgets\": [
-                          {
-                            \"buttonList\": {
-                              \"buttons\": [
-                                {
-                                  \"text\": \"Ver workflow no GitHub\",
-                                  \"onClick\": {
-                                    \"openLink\": {
-                                      \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
-                                    }
-                                  }
-                                },
-                                {
-                                  \"text\": \"Ver repositório\",
-                                  \"onClick\": {
-                                    \"openLink\": {
-                                      \"url\": \"${{ github.server_url }}/${{ github.repository }}\"
-                                    }
+                        },
+                        {
+                          "decoratedText": {
+                            "topLabel": "Nova versão",
+                            "text": "${{ steps.get_version.outputs.version }}"
+                          }
+                        },
+                        {
+                          "decoratedText": {
+                            "topLabel": "Repositório",
+                            "text": "${{ github.repository }}"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "header": "🔗 Ações",
+                      "widgets": [
+                        {
+                          "buttonList": {
+                            "buttons": [
+                              {
+                                "text": "Ver workflow no GitHub",
+                                "onClick": {
+                                  "openLink": {
+                                    "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                                   }
                                 }
-                              ]
-                            }
+                              },
+                              {
+                                "text": "Ver repositório",
+                                "onClick": {
+                                  "openLink": {
+                                    "url": "${{ github.server_url }}/${{ github.repository }}"
+                                  }
+                                }
+                              }
+                            ]
                           }
-                        ]
-                      }
-                    ]
-                  }
+                        }
+                      ]
+                    }
+                  ]
                 }
-              ]
-            }" \
-            ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+              }
+            ]
+          }
+          EOF
+
+          echo "🚀 Enviando notificação ao Google Chat..."
+          curl -v -X POST \
+            -H "Content-Type: application/json" \
+            -d @payload.json \
+            "$CHAT_WEBHOOK"
+
+      - name: Mostrar retorno da API (para debug)
+        if: steps.compare.outputs.changed == 'true'
+        run: cat payload.json
