@@ -111,7 +111,9 @@ jobs:
                 "card": {
                   "header": {
                     "title": "Nova versão do Validador BACEN detectada",
-                    "subtitle": "Workflow: Check Validador Version"
+                    "subtitle": "Workflow: Check Validador Version",
+                    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Emoji_u26a0.svg/120px-Emoji_u26a0.svg.png",
+                    "imageType": "CIRCLE",
                   },
                   "sections": [
                     {
