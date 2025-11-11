@@ -66,12 +66,6 @@ jobs:
           git commit -m "Atualiza versão do Validador para ${{ steps.get_version.outputs.version }}"
           git push
 
-      - name: Debug webhook URL (parcial)
-        run: |
-          echo "Webhook começa com: ${GOOGLE_CHAT_WEBHOOK:0:50}"
-        env:
-          GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
       - name: Notificar no Google Chat (nova versão detectada)
         if: always()
         env:
@@ -115,24 +109,16 @@ jobs:
                       ]
                     },
                     {
-                      "header": "🔗 Ações",
+                      "header": "⬇️ Download",
                       "widgets": [
                         {
                           "buttonList": {
                             "buttons": [
                               {
-                                "text": "Ver workflow no GitHub",
+                                "text": "Baixar Validador",
                                 "onClick": {
                                   "openLink": {
-                                    "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                                  }
-                                }
-                              },
-                              {
-                                "text": "Ver repositório",
-                                "onClick": {
-                                  "openLink": {
-                                    "url": "${{ github.server_url }}/${{ github.repository }}"
+                                    "url": "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip"
                                   }
                                 }
                               }
@@ -149,11 +135,7 @@ jobs:
           EOF
 
           echo "🚀 Enviando notificação ao Google Chat..."
-          curl -v -X POST \
+          curl -s -X POST \
             -H "Content-Type: application/json" \
             -d @payload.json \
             "$CHAT_WEBHOOK"
-
-      - name: Mostrar retorno da API (para debug)
-        if: steps.compare.outputs.changed == 'true'
-        run: cat payload.json
