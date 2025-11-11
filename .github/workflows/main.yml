@@ -3,10 +3,10 @@ name: Check Validador Version
 on:
   schedule:
     - cron: "0 * * * *"  # Executa a cada hora
-  workflow_dispatch:
+  workflow_dispatch:     # Permite rodar manualmente pelo botão "Run workflow"
 
 permissions:
-  contents: write  # permite commit automático
+  contents: write  # Permite commit automático
 
 jobs:
   check_version:
@@ -24,6 +24,12 @@ jobs:
         run: |
           PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
           VERSION=$(echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | head -1 | awk '{print $2}')
+          
+          if [ -z "$VERSION" ]; then
+            echo "⚠️ Nenhuma versão encontrada na página!"
+            VERSION="erro"
+          fi
+
           echo "Versão atual encontrada: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -43,10 +49,12 @@ jobs:
           if [ "$LAST" != "${{ steps.get_version.outputs.version }}" ]; then
             echo "Nova versão detectada!"
             echo "changed=true" >> $GITHUB_OUTPUT
+            echo "last_version=$LAST" >> $GITHUB_OUTPUT
             echo "${{ steps.get_version.outputs.version }}" > "$FILE"
           else
             echo "Nenhuma mudança detectada."
             echo "changed=false" >> $GITHUB_OUTPUT
+            echo "last_version=$LAST" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit new version (if changed)
@@ -55,7 +63,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add ultima_versao.txt
-          git commit -m "Atualiza versão do validador para ${{ steps.get_version.outputs.version }}"
+          git commit -m "Atualiza versão do Validador para ${{ steps.get_version.outputs.version }}"
           git push
 
       - name: Send email alert (internal SMTP)
@@ -67,11 +75,11 @@ jobs:
           secure: false
           subject: "🚨 Nova versão do Validador detectada: ${{ steps.get_version.outputs.version }}"
           to: "qa-testes@prognum.com.br"
-          from: "Validador Bacen <qa-testes@teste.com.br>"
+          from: "Validador Bacen <qa-testes@prognum.com.br>"
           body: |
             Foi detectada uma nova versão do Validador BACEN!
 
-            🔹 Versão anterior: (registrada anteriormente)
+            🔹 Versão anterior: ${{ steps.compare.outputs.last_version }}
             🔹 Nova versão: ${{ steps.get_version.outputs.version }}
 
             O arquivo ultima_versao.txt foi atualizado automaticamente no repositório.
