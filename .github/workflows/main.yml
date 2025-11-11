@@ -71,7 +71,7 @@ jobs:
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: mail.prognum.com.br
-          server_port: 587
+          server_port: 25
           secure: false
           subject: "🚨 Nova versão do Validador detectada: ${{ steps.get_version.outputs.version }}"
           to: "qa-testes@prognum.com.br"
