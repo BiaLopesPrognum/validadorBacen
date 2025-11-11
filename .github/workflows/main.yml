@@ -113,7 +113,7 @@ jobs:
                     "title": "Nova versão do Validador BACEN detectada",
                     "subtitle": "Workflow: Check Validador Version",
                     "imageUrl": "https://cdn-icons-png.flaticon.com/512/564/564619.png",
-                    "imageType": "CIRCLE",
+                    "imageType": "SQUARE",
                   },
                   "sections": [
                     {
