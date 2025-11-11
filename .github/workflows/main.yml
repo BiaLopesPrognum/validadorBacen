@@ -2,11 +2,11 @@ name: Check Validador Version
 
 on:
   schedule:
-    - cron: "0 * * * *"  # Executa a cada hora
+    - cron: "0 */3 * * *"  # Executa a cada 3 horas
   workflow_dispatch:
 
 permissions:
-  contents: write  # Permite commit automático
+  contents: write
 
 jobs:
   check_version:
@@ -16,10 +16,19 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install curl and grep
-        run: sudo apt-get update && sudo apt-get install -y curl grep unzip
+      - name: Instalar curl e grep
+        run: sudo apt-get update && sudo apt-get install -y curl grep
 
-      - name: Get current version from site
+      - name: Verificar horário atual (executar apenas entre 07h e 19h)
+        run: |
+          HORA=$(TZ="America/Sao_Paulo" date +%H)
+          echo "⏰ Hora atual: $HORA"
+          if [ "$HORA" -lt 7 ] || [ "$HORA" -ge 19 ]; then
+            echo "🛑 Fora do horário permitido (07h–19h). Encerrando workflow."
+            exit 0
+          fi
+
+      - name: Obter versão atual do site
         id: get_version
         run: |
           PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
@@ -33,7 +42,7 @@ jobs:
           echo "Versão atual encontrada: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Compare with last stored version
+      - name: Comparar com última versão registrada
         id: compare
         run: |
           FILE="ultima_versao.txt"
@@ -57,30 +66,44 @@ jobs:
             echo "last_version=$LAST" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download nova versão do Validador
+      - name: Baixar nova versão do Validador
         if: steps.compare.outputs.changed == 'true'
         run: |
-          mkdir -p validador
           echo "⬇️ Baixando nova versão do Validador..."
-          curl -L "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip" -o "validador/SCR3040_Validador.zip"
-          echo "✅ Download concluído. Arquivo salvo em validador/SCR3040_Validador.zip"
-          unzip -l validador/SCR3040_Validador.zip || true  # Mostra conteúdo para debug
+          curl -L "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip" -o "SCR3040_Validador.zip"
+          echo "✅ Download concluído."
 
-      - name: Commit nova versão (ZIP + info)
+      - name: Commit nova versão (apenas info)
         if: steps.compare.outputs.changed == 'true'
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add ultima_versao.txt validador/SCR3040_Validador.zip
+          git add ultima_versao.txt
           git commit -m "📦 Atualiza Validador BACEN para versão ${{ steps.get_version.outputs.version }}"
           git push
+
+      - name: Criar Release no GitHub
+        if: steps.compare.outputs.changed == 'true'
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.get_version.outputs.version }}"
+          name: "Validador BACEN - Versão ${{ steps.get_version.outputs.version }}"
+          body: |
+            Nova versão detectada automaticamente pelo workflow.
+
+            🔹 Versão anterior: ${{ steps.compare.outputs.last_version }}
+            🔹 Nova versão: ${{ steps.get_version.outputs.version }}
+
+            Download direto disponível abaixo.
+          files: SCR3040_Validador.zip
 
       - name: Notificar no Google Chat (nova versão detectada)
         if: steps.compare.outputs.changed == 'true'
         env:
           CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
         run: |
-          echo "🧩 Gerando payload do Google Chat..."
+          RELEASE_URL="${{ steps.create_release.outputs.url }}"
           cat <<EOF > payload.json
           {
             "cardsV2": [
@@ -118,7 +141,7 @@ jobs:
                       ]
                     },
                     {
-                      "header": "⬇️ Download",
+                      "header": "⬇️ Download da nova versão",
                       "widgets": [
                         {
                           "buttonList": {
@@ -127,7 +150,7 @@ jobs:
                                 "text": "Baixar Validador",
                                 "onClick": {
                                   "openLink": {
-                                    "url": "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip"
+                                    "url": "$RELEASE_URL"
                                   }
                                 }
                               }
@@ -143,7 +166,6 @@ jobs:
           }
           EOF
 
-          echo "🚀 Enviando notificação ao Google Chat..."
           curl -s -X POST \
             -H "Content-Type: application/json" \
             -d @payload.json \
