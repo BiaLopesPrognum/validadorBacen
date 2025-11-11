@@ -66,13 +66,11 @@ jobs:
           git commit -m "Atualiza versão do Validador para ${{ steps.get_version.outputs.version }}"
           git push
 
-      # ---- DEBUG opcional ----
       - name: Debug webhook URL (parcial)
         run: |
           echo "Webhook começa com: ${GOOGLE_CHAT_WEBHOOK:0:50}"
         env:
           GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-      # -------------------------
 
       - name: Notificar no Google Chat (nova versão detectada)
         if: always()
