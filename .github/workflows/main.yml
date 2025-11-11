@@ -66,23 +66,78 @@ jobs:
           git commit -m "Atualiza versão do Validador para ${{ steps.get_version.outputs.version }}"
           git push
 
-      - name: Send email alert (internal SMTP)
+      - name: Notificar no Google Chat (nova versão detectada)
         if: steps.compare.outputs.changed == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: mail.prognum.com.br
-          server_port: 25
-          secure: false
-          subject: "🚨 Nova versão do Validador detectada: ${{ steps.get_version.outputs.version }}"
-          to: "qa-testes@prognum.com.br"
-          from: "Validador Bacen <qa-testes@prognum.com.br>"
-          body: |
-            Foi detectada uma nova versão do Validador BACEN!
-
-            🔹 Versão anterior: ${{ steps.compare.outputs.last_version }}
-            🔹 Nova versão: ${{ steps.get_version.outputs.version }}
-
-            O arquivo ultima_versao.txt foi atualizado automaticamente no repositório.
-
-            Repositório: ${{ github.repository }}
-            Executado por: GitHub Actions
+        run: |
+          curl -X POST \
+            -H 'Content-Type: application/json' \
+            -d "{
+              'cardsV2': [
+                {
+                  'cardId': 'validador-update',
+                  'card': {
+                    'header': {
+                      'title': '🚀 Nova versão do Validador detectada!',
+                      'subtitle': 'Workflow: Check Validador Version',
+                      'imageUrl': 'https://cdn-icons-png.flaticon.com/512/5610/5610944.png',
+                      'imageType': 'CIRCLE'
+                    },
+                    'sections': [
+                      {
+                        'header': '📦 Detalhes da atualização',
+                        'widgets': [
+                          {
+                            'keyValue': {
+                              'topLabel': 'Versão anterior',
+                              'content': '${{ steps.compare.outputs.last_version }}'
+                            }
+                          },
+                          {
+                            'keyValue': {
+                              'topLabel': 'Nova versão',
+                              'content': '${{ steps.get_version.outputs.version }}'
+                            }
+                          },
+                          {
+                            'keyValue': {
+                              'topLabel': 'Repositório',
+                              'content': '${{ github.repository }}'
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        'header': '🔗 Ações',
+                        'widgets': [
+                          {
+                            'buttons': [
+                              {
+                                'textButton': {
+                                  'text': 'Ver workflow no GitHub',
+                                  'onClick': {
+                                    'openLink': {
+                                      'url': '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                'textButton': {
+                                  'text': 'Ver repositório',
+                                  'onClick': {
+                                    'openLink': {
+                                      'url': '${{ github.server_url }}/${{ github.repository }}'
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }" \
+            ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
