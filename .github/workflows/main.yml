@@ -67,7 +67,7 @@ jobs:
           git push
 
       - name: Notificar no Google Chat (nova versão detectada)
-        if: always()
+        if: steps.compare.outputs.changed == 'true'
         env:
           CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
         run: |
@@ -79,14 +79,14 @@ jobs:
                 "cardId": "validador-update",
                 "card": {
                   "header": {
-                    "title": "🚀 Nova versão do Validador detectada!",
+                    "title": "Nova versão do Validador detectada!",
                     "subtitle": "Workflow: Check Validador Version",
                     "imageUrl": "https://cdn-icons-png.flaticon.com/512/5610/5610944.png",
                     "imageType": "CIRCLE"
                   },
                   "sections": [
                     {
-                      "header": "📦 Detalhes da atualização",
+                      "header": "Detalhes da atualização",
                       "widgets": [
                         {
                           "decoratedText": {
