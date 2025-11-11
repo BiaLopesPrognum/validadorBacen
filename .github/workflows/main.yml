@@ -67,7 +67,7 @@ jobs:
           git push
 
       - name: Notificar no Google Chat (nova versão detectada)
-        if: steps.compare.outputs.changed == 'true'
+        if: always()
         run: |
           curl -X POST \
             -H 'Content-Type: application/json' \
