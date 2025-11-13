@@ -25,7 +25,7 @@ jobs:
           echo "Hora atual: $HORA"
           if [ "$HORA" -lt 7 ] || [ "$HORA" -ge 19 ]; then
             echo "Fora do horário permitido (07h–19h). Encerrando workflow."
-            exit 0
+            exit 1
           fi
 
       - name: Obter versão atual do site
