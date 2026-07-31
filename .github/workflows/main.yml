@@ -45,7 +45,11 @@ jobs:
             echo "  [debug] Primeiros 500 caracteres da resposta:" >&2
             head -c 500 /tmp/page.json >&2
             echo "" >&2
-            grep -oE 'Release[[:space:]]+[0-9]+' /tmp/page.json | awk '{print $2}' | sort -n | tail -1
+            # A página traz sempre dois números "Release ####" na mesma resposta:
+            # um rotulado "Versão Atual" e outro "Versão Anterior", possivelmente
+            # separados por quebras de linha. Pegamos o que vem logo após "Atual"
+            # (modo multilinha com -z/(?s), nunca o primeiro/maior encontrado).
+            grep -Pzo '(?s)Atual.{0,300}?Release[[:space:]]+\K[0-9]+' /tmp/page.json | head -z -n1 | tr -d '\0'
           }
 
           VERSION_1=$(fetch_version)
