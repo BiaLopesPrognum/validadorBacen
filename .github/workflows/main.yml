@@ -42,8 +42,10 @@ jobs:
               https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
             echo "  [debug] HTTP status: $HTTP_CODE" >&2
             echo "  [debug] Tamanho da resposta: $(wc -c < /tmp/page.json) bytes" >&2
-            echo "  [debug] Primeiros 500 caracteres da resposta:" >&2
-            head -c 500 /tmp/page.json >&2
+            echo "  [debug] Ocorrências de 'Release' (case-insensitive): $(grep -ioc 'Release' /tmp/page.json)" >&2
+            echo "  [debug] Ocorrências de 'Atual': $(grep -ioc 'Atual' /tmp/page.json)" >&2
+            echo "  [debug] Contexto ao redor de cada 'Release' encontrado:" >&2
+            grep -Pzo '(?si).{0,80}Release.{0,80}' /tmp/page.json | tr '\0' '\n' >&2
             echo "" >&2
             # A página traz sempre dois números "Release ####" na mesma resposta:
             # um rotulado "Versão Atual" e outro "Versão Anterior", possivelmente
