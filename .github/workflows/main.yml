@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 */3 * * *"  # Executa a cada 3 horas
   workflow_dispatch:
+    inputs:
+      test_mode:
+        description: "Modo teste: notifica no espaço de teste e não grava estado nem cria release real"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -65,53 +70,83 @@ jobs:
         if: steps.get_version.outputs.confirmed == 'true'
         run: |
           FILE="ultima_versao.txt"
+          PENDING_FILE="pending_downgrade.txt"
+
           if [ -f "$FILE" ]; then
             LAST=$(cat "$FILE")
           else
             LAST="none"
           fi
 
+          if [ -f "$PENDING_FILE" ]; then
+            PENDING=$(cat "$PENDING_FILE")
+          else
+            PENDING=""
+          fi
+
           VERSION="${{ steps.get_version.outputs.version }}"
           echo "Última versão registrada: $LAST"
+          echo "Candidato a downgrade pendente (ciclo anterior): ${PENDING:-nenhum}"
           echo "Nova versão confirmada: $VERSION"
+
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "state_write=false" >> $GITHUB_OUTPUT
+          echo "last_version=$LAST" >> $GITHUB_OUTPUT
 
           if [ "$LAST" == "$VERSION" ]; then
             echo "Nenhuma mudança detectada."
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "last_version=$LAST" >> $GITHUB_OUTPUT
+            if [ -n "$PENDING" ]; then
+              echo "Versão voltou ao valor registrado - descartando candidato a downgrade pendente."
+              rm -f "$PENDING_FILE"
+              echo "state_write=true" >> $GITHUB_OUTPUT
+            fi
             exit 0
           fi
 
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "last_version=$LAST" >> $GITHUB_OUTPUT
-          echo "$VERSION" > "$FILE"
+          if [ "$LAST" == "none" ] || [ "$VERSION" -gt "$LAST" ] 2>/dev/null; then
+            echo "Nova versão detectada!"
+            rm -f "$PENDING_FILE"
+            echo "$VERSION" > "$FILE"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "state_write=true" >> $GITHUB_OUTPUT
+            echo "is_downgrade=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-          if [ "$LAST" != "none" ] && [ "$VERSION" -lt "$LAST" ] 2>/dev/null; then
-            echo "⚠️ Downgrade detectado (versão $VERSION menor que $LAST)."
+          # VERSION < LAST: candidato a downgrade. Só confirma (grava estado e alerta)
+          # se a MESMA versão menor já tinha aparecido como candidata no ciclo agendado anterior,
+          # blindando contra cache/CDN do Bacen servindo conteúdo desatualizado por horas.
+          if [ "$PENDING" == "$VERSION" ]; then
+            echo "⚠️ Downgrade confirmado em dois ciclos consecutivos (versão $VERSION menor que $LAST)."
+            echo "$VERSION" > "$FILE"
+            rm -f "$PENDING_FILE"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "state_write=true" >> $GITHUB_OUTPUT
             echo "is_downgrade=true" >> $GITHUB_OUTPUT
           else
-            echo "Nova versão detectada!"
-            echo "is_downgrade=false" >> $GITHUB_OUTPUT
+            echo "Possível downgrade ($VERSION menor que $LAST) - aguardando confirmação no próximo ciclo agendado antes de alertar."
+            echo "$VERSION" > "$PENDING_FILE"
+            echo "state_write=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Baixar nova versão do Validador
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.compare.outputs.changed == 'true' && github.event.inputs.test_mode != 'true'
         run: |
           echo "⬇️ Baixando nova versão do Validador..."
           curl -L "https://www.bcb.gov.br/content/estabilidadefinanceira/Leiaute_de_documentos/scrdoc3040/SCR3040_Validador.zip" -o "SCR3040_Validador.zip"
           echo "✅ Download concluído."
 
-      - name: Commit nova versão (somente registro)
-        if: steps.compare.outputs.changed == 'true'
+      - name: Persistir estado (versão registrada / candidato a downgrade)
+        if: steps.compare.outputs.state_write == 'true' && github.event.inputs.test_mode != 'true'
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add ultima_versao.txt
-          git commit -m "Atualiza Validador BACEN para versão ${{ steps.get_version.outputs.version }}"
+          git add -A
+          git commit -m "Atualiza estado do checker de versão (leitura: ${{ steps.get_version.outputs.version }})"
           git push
 
       - name: Criar Release no GitHub (com o ZIP anexado)
-        if: steps.compare.outputs.changed == 'true'
+        if: steps.compare.outputs.changed == 'true' && github.event.inputs.test_mode != 'true'
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
@@ -129,8 +164,9 @@ jobs:
       - name: Notificar no Google Chat (nova versão detectada)
         if: steps.compare.outputs.changed == 'true'
         env:
-          CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          CHAT_WEBHOOK: ${{ github.event.inputs.test_mode == 'true' && secrets.TEST_CHAT_WEBHOOK || secrets.GOOGLE_CHAT_WEBHOOK }}
           CARD_TITLE: ${{ steps.compare.outputs.is_downgrade == 'true' && '⚠️ Downgrade do Validador BACEN detectado' || 'Nova versão do Validador BACEN detectada' }}
+          TEST_PREFIX: ${{ github.event.inputs.test_mode == 'true' && '[TESTE] ' || '' }}
         run: |
           cat <<EOF > payload.json
           {
@@ -139,7 +175,7 @@ jobs:
                 "cardId": "validador-update",
                 "card": {
                   "header": {
-                    "title": "$CARD_TITLE",
+                    "title": "$TEST_PREFIX$CARD_TITLE",
                     "subtitle": "Workflow: Check Validador Version",
                     "imageUrl": "https://cdn-icons-png.flaticon.com/512/564/564619.png",
                     "imageType": "SQUARE",
