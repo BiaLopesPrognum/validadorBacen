@@ -37,8 +37,15 @@ jobs:
         id: get_version
         run: |
           fetch_version() {
-            PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
-            echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | awk '{print $2}' | sort -n | tail -1
+            HTTP_CODE=$(curl -s -o /tmp/page.json -w "%{http_code}" \
+              -A "Mozilla/5.0 (compatible; ValidadorBacenChecker/1.0)" \
+              https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
+            echo "  [debug] HTTP status: $HTTP_CODE" >&2
+            echo "  [debug] Tamanho da resposta: $(wc -c < /tmp/page.json) bytes" >&2
+            echo "  [debug] Primeiros 500 caracteres da resposta:" >&2
+            head -c 500 /tmp/page.json >&2
+            echo "" >&2
+            grep -oE 'Release[[:space:]]+[0-9]+' /tmp/page.json | awk '{print $2}' | sort -n | tail -1
           }
 
           VERSION_1=$(fetch_version)
