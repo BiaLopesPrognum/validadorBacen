@@ -28,22 +28,41 @@ jobs:
             exit 1
           fi
 
-      - name: Obter versão atual do site
+      - name: Obter versão atual do site (com dupla confirmação)
         id: get_version
         run: |
-          PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
-          VERSION=$(echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | head -1 | awk '{print $2}')
-          
-          if [ -z "$VERSION" ]; then
-            echo "Nenhuma versão encontrada na página!"
-            VERSION="erro"
+          fetch_version() {
+            PAGE=$(curl -s https://www.bcb.gov.br/api/paginasite/sitebcb/estabilidadefinanceira/scrdoc3040)
+            echo "$PAGE" | grep -oE 'Release[[:space:]]+[0-9]+' | awk '{print $2}' | sort -n | tail -1
+          }
+
+          VERSION_1=$(fetch_version)
+          echo "1ª leitura: $VERSION_1"
+
+          sleep 20
+
+          VERSION_2=$(fetch_version)
+          echo "2ª leitura: $VERSION_2"
+
+          if [ -z "$VERSION_1" ] || [ -z "$VERSION_2" ]; then
+            echo "Nenhuma versão encontrada em uma das leituras da página!"
+            echo "confirmed=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
-          echo "Versão atual encontrada: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [ "$VERSION_1" != "$VERSION_2" ]; then
+            echo "⚠️ Leituras divergentes ($VERSION_1 vs $VERSION_2) - provável cache/CDN inconsistente. Ignorando este ciclo."
+            echo "confirmed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Versão confirmada em duas leituras: $VERSION_1"
+          echo "confirmed=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION_1" >> $GITHUB_OUTPUT
 
       - name: Comparar com última versão registrada
         id: compare
+        if: steps.get_version.outputs.confirmed == 'true'
         run: |
           FILE="ultima_versao.txt"
           if [ -f "$FILE" ]; then
@@ -52,18 +71,27 @@ jobs:
             LAST="none"
           fi
 
+          VERSION="${{ steps.get_version.outputs.version }}"
           echo "Última versão registrada: $LAST"
-          echo "Nova versão: ${{ steps.get_version.outputs.version }}"
+          echo "Nova versão confirmada: $VERSION"
 
-          if [ "$LAST" != "${{ steps.get_version.outputs.version }}" ]; then
-            echo "Nova versão detectada!"
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "last_version=$LAST" >> $GITHUB_OUTPUT
-            echo "${{ steps.get_version.outputs.version }}" > "$FILE"
-          else
+          if [ "$LAST" == "$VERSION" ]; then
             echo "Nenhuma mudança detectada."
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "last_version=$LAST" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "last_version=$LAST" >> $GITHUB_OUTPUT
+          echo "$VERSION" > "$FILE"
+
+          if [ "$LAST" != "none" ] && [ "$VERSION" -lt "$LAST" ] 2>/dev/null; then
+            echo "⚠️ Downgrade detectado (versão $VERSION menor que $LAST)."
+            echo "is_downgrade=true" >> $GITHUB_OUTPUT
+          else
+            echo "Nova versão detectada!"
+            echo "is_downgrade=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Baixar nova versão do Validador
@@ -90,7 +118,7 @@ jobs:
           tag_name: "v${{ steps.get_version.outputs.version }}"
           name: "Validador BACEN - Versão ${{ steps.get_version.outputs.version }}"
           body: |
-            Nova versão detectada automaticamente pelo workflow.
+            ${{ steps.compare.outputs.is_downgrade == 'true' && '⚠️ Downgrade detectado automaticamente pelo workflow.' || 'Nova versão detectada automaticamente pelo workflow.' }}
 
             🔹 Versão anterior: ${{ steps.compare.outputs.last_version }}
             🔹 Nova versão: ${{ steps.get_version.outputs.version }}
@@ -102,6 +130,7 @@ jobs:
         if: steps.compare.outputs.changed == 'true'
         env:
           CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          CARD_TITLE: ${{ steps.compare.outputs.is_downgrade == 'true' && '⚠️ Downgrade do Validador BACEN detectado' || 'Nova versão do Validador BACEN detectada' }}
         run: |
           cat <<EOF > payload.json
           {
@@ -110,7 +139,7 @@ jobs:
                 "cardId": "validador-update",
                 "card": {
                   "header": {
-                    "title": "Nova versão do Validador BACEN detectada",
+                    "title": "$CARD_TITLE",
                     "subtitle": "Workflow: Check Validador Version",
                     "imageUrl": "https://cdn-icons-png.flaticon.com/512/564/564619.png",
                     "imageType": "SQUARE",
