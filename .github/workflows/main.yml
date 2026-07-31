@@ -48,10 +48,10 @@ jobs:
             grep -Pzo '(?si).{0,80}Release.{0,80}' /tmp/page.json | tr '\0' '\n' >&2
             echo "" >&2
             # A página traz sempre dois números "Release ####" na mesma resposta:
-            # um rotulado "Versão Atual" e outro "Versão Anterior", possivelmente
-            # separados por quebras de linha. Pegamos o que vem logo após "Atual"
-            # (modo multilinha com -z/(?s), nunca o primeiro/maior encontrado).
-            grep -Pzo '(?s)Atual.{0,300}?Release[[:space:]]+\K[0-9]+' /tmp/page.json | head -z -n1 | tr -d '\0'
+            # um rotulado "Versão Atual" e outro "Versão Anterior". Entre "Release"
+            # e o número há tags HTML (<span>...</span>), não só espaço - por isso
+            # pulamos qualquer caractere não numérico até achar os dígitos.
+            grep -Pzo '(?s)Atual.{0,300}?Release[^0-9]*\K[0-9]+' /tmp/page.json | head -z -n1 | tr -d '\0'
           }
 
           VERSION_1=$(fetch_version)
